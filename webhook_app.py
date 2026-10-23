@@ -349,6 +349,16 @@ def ask_gemini(chat_id, user_id, name, question):
         for r in matches
     )
 
+    # The response language must follow the triggering user's message.
+    response_language = (
+        "\nIMPORTANT LANGUAGE RULE: The user's current message is in English. "
+        "Reply entirely in natural English. Do not use Uzbek words or sentences. "
+        "This response will be spoken aloud using an English TTS voice.\n"
+        if english_message(question) else
+        "\nIMPORTANT LANGUAGE RULE: Reply in natural Uzbek (Latin script). "
+        "Do not switch to English unless the user specifically requests it.\n"
+    )
+
     # 5. Gemini uchun ko'rsatmalar
     instructions = (
         "\n\nMUHIM QOIDALAR:\n"
@@ -372,6 +382,7 @@ def ask_gemini(chat_id, user_id, name, question):
         SYSTEM
         + role
         + instructions
+        + response_language
         + '\n\nESKI XOTIRA:\n'
         + (archive or 'Mos eski xabar topilmadi.')
         + '\n\nOXIRGI SUHBAT (faqat kontekst, savol emas):\n'
@@ -445,7 +456,7 @@ def english_message(text):
     if not letters or any(ord(c) > 127 for c in letters):
         return False
     return bool(re.search(
-        r'\b(hello|what|why|how|when|where|can|could|would|should|please|thanks|thank|the|you|your|are|is|do|does|tell|about|who|which|explain)\b',
+        r'\b(hi|hey|hello|good|morning|evening|what|why|how|when|where|can|could|would|should|please|thanks|thank|the|you|your|are|is|do|does|tell|about|who|which|explain)\b',
         clean.lower()
     ))
 
