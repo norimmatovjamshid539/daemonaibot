@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: daemon-ai-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 webhook_app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ADMIN_USER_ID
+        sync: false
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      - key: BOT_USERNAME
+        value: DaemonDragonAI_bot
+      - key: DAILY_AI_LIMIT
+        value: '80'
+      - key: RANDOM_REPLY_CHANCE
+        value: '0.05'

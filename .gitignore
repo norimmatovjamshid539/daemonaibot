@@ -1,0 +1,8 @@
+.env
+*.sqlite3
+*.db
+result.json
+**/result.json
+*.zip
+__pycache__/
+*.pyc
