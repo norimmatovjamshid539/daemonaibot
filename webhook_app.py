@@ -148,7 +148,16 @@ def memory_search(chat_id, question, limit=MEMORY_SEARCH_LIMIT):
             ) sampled WHERE rn <= 2 ORDER BY created_at LIMIT %s""", params + [max(limit, 24)]).fetchall()
         else:
             rows = conn.execute(f'SELECT name,text,created_at FROM public.messages WHERE {where_sql} ORDER BY created_at DESC,id DESC LIMIT %s', params + [limit]).fetchall()
-    return [{'name': r[0], 'text': r[1][:450], 'date': r[2].date().isoformat()} for r in rows]
+    
+    return [
+        {
+            'name': r[0],
+            'text': (r[1] or '')[:450],
+            'date': str(r[2])[:10] if r[2] else ''
+        }
+        for r in rows
+    ]
+
 
 
 def get_rhaenyra(chat_id):
