@@ -1,5 +1,7 @@
 """Daemon Telegram AI bot: Flask webhook + Gemini REST API."""
 import logging
+import asyncio
+import io
 import os
 import random
 import re
@@ -30,6 +32,9 @@ DB_PATH = os.getenv('DB_PATH', 'daemon.sqlite3')
 DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
 MEMORY_CHAT_ID = int(os.getenv('MEMORY_CHAT_ID', '0') or '0')
 MEMORY_SEARCH_LIMIT = 8
+VOICE_ENABLED = os.getenv('VOICE_ENABLED', 'false').strip().lower() == 'true'
+FREE_TTS_ENABLED = os.getenv('FREE_TTS_ENABLED', 'true').strip().lower() == 'true'
+FREE_TTS_VOICE = os.getenv('FREE_TTS_VOICE', 'en-GB-RyanNeural').strip()
 
 if not TOKEN or not GEMINI_KEY or not WEBHOOK_SECRET:
     log.warning('Required environment variables missing; configure Render Environment.')
@@ -261,6 +266,51 @@ def ask_gemini(chat_id, user_id, name):
     return answer
 
 
+def english_message(text):
+    """Detect common English questions, ignoring the Telegram @mention."""
+    clean = re.sub(r'@[A-Za-z0-9_]+', ' ', text)
+    letters = [c for c in clean if c.isalpha()]
+    if not letters or any(ord(c) > 127 for c in letters):
+        return False
+    return bool(re.search(
+        r'\b(hello|what|why|how|when|where|can|could|would|should|please|thanks|thank|the|you|your|are|is|do|does|tell|about|who|which|explain)\b',
+        clean.lower()
+    ))
+
+
+async def _edge_audio(text):
+    import edge_tts
+    communicate = edge_tts.Communicate(text=text[:1400], voice=FREE_TTS_VOICE)
+    chunks = []
+    async for chunk in communicate.stream():
+        if chunk.get('type') == 'audio':
+            chunks.append(chunk['data'])
+    if not chunks:
+        raise RuntimeError('Edge TTS returned no audio')
+    return b''.join(chunks)
+
+
+def send_voice(chat_id, text, reply_to=None):
+    """Send an MP3 voice note; caller falls back to text on failure."""
+    if not (VOICE_ENABLED and FREE_TTS_ENABLED):
+        return False
+    audio = asyncio.run(_edge_audio(text))
+    data = {'chat_id': str(chat_id)}
+    if reply_to:
+        data['reply_to_message_id'] = str(reply_to)
+    response = requests.post(
+        f'https://api.telegram.org/bot{TOKEN}/sendVoice',
+        data=data,
+        files={'voice': ('daemon_voice.mp3', io.BytesIO(audio), 'audio/mpeg')},
+        timeout=(10, 60),
+    )
+    response.raise_for_status()
+    result = response.json()
+    if not result.get('ok'):
+        raise RuntimeError('Telegram sendVoice returned ok=false')
+    return True
+
+
 def handle_update(update):
     msg = update.get('message') or update.get('edited_message')
     if not msg or 'text' not in msg:
@@ -319,7 +369,14 @@ def handle_update(update):
         return
     try:
         answer = ask_gemini(chat_id, uid, name)
-        say(chat_id, answer, mid if direct else None)
+        voice_sent = False
+        if english_message(text) and VOICE_ENABLED:
+            try:
+                voice_sent = send_voice(chat_id, answer, mid if direct else None)
+            except Exception:
+                log.exception('Voice synthesis/send failed; falling back to text')
+        if not voice_sent:
+            say(chat_id, answer, mid if direct else None)
         save_message(chat_id, 0, 'Daemon', answer)
     except Exception:
         log.exception('AI or Telegram request failed (credentials hidden)')
